@@ -1,0 +1,136 @@
+// 2026_MOLIT_ML 의 Prisma 스키마
+//
+// ⚠️ server (2026_MOLIT_CONTEST) 의 schema 와 같은 DB 를 가리킨다.
+//    - 다른 모델(t_user, t_apt_complex 등)은 server 가 owner — ML 은 read-only 로 사용
+//    - TrainingResult 는 ML 의 책임 영역 — `prisma db push` 로 신규 테이블만 생성
+//
+// 명령:
+//   npx prisma db push       # TrainingResult 테이블만 신규 생성 (기존 영향 없음)
+//   npx prisma generate      # Prisma Client 재생성
+
+generator client {
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "windows", "debian-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+// ──────────────────────────────────────────────────────────────
+//  Server 와 공유하는 모델 (read-only — ML 은 변경하지 않음)
+// ──────────────────────────────────────────────────────────────
+
+model AptComplex {
+  id          Int      @id @default(autoincrement())
+  aptSeq      String?  @unique @map("apt_seq") @db.VarChar(40)
+  name        String   @db.VarChar(120)
+  sigunguCode String   @map("sigungu_code") @db.VarChar(5)
+  legalDong   String   @map("legal_dong") @db.VarChar(60)
+  jibun       String?  @db.VarChar(60)
+  roadAddr    String?  @map("road_addr") @db.VarChar(200)
+  builtYear   Int?     @map("built_year")
+  lat         Float?
+  lng         Float?
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  trades AptTrade[]
+  rents  AptRent[]
+
+  @@unique([sigunguCode, legalDong, name, builtYear], map: "uniq_complex_fingerprint")
+  @@index([sigunguCode, legalDong])
+  @@map("t_apt_complex")
+}
+
+model AptTrade {
+  id          Int      @id @default(autoincrement())
+  complexId   Int      @map("complex_id")
+  dealDate    DateTime @map("deal_date") @db.Date
+  priceManwon Int      @map("price_manwon")
+  areaM2      Float    @map("area_m2")
+  floor       Int?
+  builtYear   Int?     @map("built_year")
+  rawPayload  Json?    @map("raw_payload")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  complex AptComplex @relation(fields: [complexId], references: [id], onDelete: Cascade)
+
+  @@unique([complexId, dealDate, areaM2, floor, priceManwon], map: "uniq_trade")
+  @@index([complexId, dealDate])
+  @@map("t_apt_trade")
+}
+
+enum RentType {
+  JEONSE
+  WOLSE
+}
+
+model AptRent {
+  id            Int      @id @default(autoincrement())
+  complexId     Int      @map("complex_id")
+  contractDate  DateTime @map("contract_date") @db.Date
+  depositManwon Int      @map("deposit_manwon")
+  monthlyManwon Int      @default(0) @map("monthly_manwon")
+  contractType  RentType @map("contract_type")
+  areaM2        Float    @map("area_m2")
+  floor         Int?
+  builtYear     Int?     @map("built_year")
+  rawPayload    Json?    @map("raw_payload")
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  complex AptComplex @relation(fields: [complexId], references: [id], onDelete: Cascade)
+
+  @@unique([complexId, contractDate, areaM2, floor, depositManwon, monthlyManwon], map: "uniq_rent")
+  @@index([complexId, contractDate])
+  @@map("t_apt_rent")
+}
+
+// ──────────────────────────────────────────────────────────────
+//  ML 책임 영역 — t_training_result
+// ──────────────────────────────────────────────────────────────
+
+enum AreaBucket {
+  SMALL        /// ≤60㎡
+  MEDIUM       /// 60~85㎡
+  LARGE_MID    /// 85~135㎡
+  LARGE        /// >135㎡
+}
+
+enum AgeBucket {
+  NEW          /// ≤10년
+  SEMI_NEW     /// 10~20년
+  MID          /// 20~30년
+  OLD          /// >30년
+}
+
+/// LSTM 학습 결과 (t_training_result)
+///  - 단지 단위로 학습 (complex_id 채움) OR 구간 집계 단위로 학습 (complex_id null)
+///  - 같은 모델 버전 + 같은 base_date + 같은 키 조합은 1 row 만 유지
+model TrainingResult {
+  id                    Int        @id @default(autoincrement())
+  complexId             Int?       @map("complex_id")
+  sigunguCode           String     @map("sigungu_code") @db.VarChar(5)
+  legalDong             String     @map("legal_dong") @db.VarChar(60)
+  areaBucket            AreaBucket @map("area_bucket")
+  ageBucket             AgeBucket  @map("age_bucket")
+  baseDate              DateTime   @map("base_date") @db.Date /// 학습 기준일 (마지막 데이터 시점)
+  currentPricePerM2     Float      @map("current_price_per_m2") /// 만원/㎡
+  predicted1yPricePerM2 Float?     @map("predicted_1y_price_per_m2")
+  predicted3yPricePerM2 Float?     @map("predicted_3y_price_per_m2")
+  expectedReturn3y      Float?     @map("expected_return_3y") /// %
+  confidence            Float? /// 0~1
+  mae                   Float? /// 검증 MAE
+  mape                  Float? /// 검증 MAPE (%)
+  sampleCount           Int        @map("sample_count")
+  modelVersion          String     @map("model_version") @db.VarChar(40)
+  modelMeta             Json?      @map("model_meta")
+  trainedAt             DateTime   @default(now()) @map("trained_at")
+
+  @@unique([sigunguCode, legalDong, areaBucket, ageBucket, complexId, baseDate, modelVersion], map: "uniq_training_result")
+  @@index([sigunguCode, legalDong])
+  @@index([complexId])
+  @@index([trainedAt])
+  @@map("t_training_result")
+}
