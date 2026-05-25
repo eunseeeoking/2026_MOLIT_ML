@@ -10,6 +10,10 @@
     "prisma:studio": "prisma studio",
     "train": "tsx src/train.ts",
     "train:one": "tsx src/train.ts --once",
+    "backtest:run": "tsx src/backtest/run.ts",
+    "backtest:arima": "python scripts/backtest/arima.py",
+    "backtest:visualize": "python scripts/backtest/visualize.py",
+    "backtest:all": "npm run backtest:run && npm run backtest:arima && npm run backtest:visualize",
     "typecheck": "tsc --noEmit",
     "postinstall": "prisma generate"
   },

@@ -7,3 +7,13 @@ models/
 .idea/
 .vscode/
 .DS_Store
+
+# Day 5 backtest 출력 — 재실행 가능, 결과 PNG 만 별도 보관 가능
+reports/series/
+reports/predictions/
+reports/backtest_results.csv
+reports/complexes.csv
+# reports/plots/ — 시각화 PNG 는 보관 (기획서 별첨용)
+__pycache__/
+*.pyc
+.pytest_cache/
