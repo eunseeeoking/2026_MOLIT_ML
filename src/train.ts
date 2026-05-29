@@ -12,6 +12,7 @@ import {
 import { trainLstm, predictNext } from './models/lstm';
 import { upsertTrainingResult } from './repository/trainingResultRepository';
 import { disconnect } from './db';
+import { calcLstmConfidence } from './utils/confidence';
 
 /**
  * 학습 파이프라인 entry point.
@@ -85,6 +86,11 @@ async function trainOneComplex(complexId: number): Promise<{
       ? ((predicted3y - currentPricePerM2) / currentPricePerM2) * 100
       : null;
 
+  // confidence 산출 (2026-05-27 — train.ts:99 TODO 해결)
+  //   기존: confidence: null 하드코딩 → server lstm.ts 가 ?? 0.7 → 모든 단지 70 픽스
+  //   변경: MAPE + sampleCount 기반 산출, DB 저장 (0~1 범위)
+  const confResult = calcLstmConfidence(mape, examples.length);
+
   await upsertTrainingResult({
     complexId,
     sigunguCode: c.sigunguCode,
@@ -96,7 +102,7 @@ async function trainOneComplex(complexId: number): Promise<{
     predicted1yPricePerM2: null, // (선택 — 별도 모델 필요)
     predicted3yPricePerM2: predicted3y,
     expectedReturn3y,
-    confidence: null, // 추후 변동성 기반 산출
+    confidence: confResult.forDb, // ← MAPE 기반 동적 산출 (NULL 가능)
     mae,
     mape,
     sampleCount: examples.length,
@@ -105,6 +111,7 @@ async function trainOneComplex(complexId: number): Promise<{
       window: WINDOW,
       horizon: HORIZON,
       scale,
+      confidenceDetail: confResult.detail,
     },
   });
 

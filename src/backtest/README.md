@@ -16,7 +16,7 @@
 
 ```powershell
 # 1) TS 측 — 5단지 자동 선정 + MA-12 + LSTM + CSV dump
-cd C:\git\2026_MOLIT_ML
+cd C:\git\NaODiSalm_ML
 npm run backtest:run
 
 # 2) Python — ARIMA(2,1,2) 추가
